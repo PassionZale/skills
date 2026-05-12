@@ -1,0 +1,20 @@
+{
+  "name": "passionzale-skills",
+  "owner": {
+    "name": "Lei Zhang",
+    "email": "whouu336699@gmail.com"
+  },
+  "metadata": {
+    "description": "Skills shared by Lei Zhang for improving daily work efficiency",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "passionzale-skills",
+      "description": "utility tools for daily work efficiency",
+      "source": "./",
+      "strict": false,
+      "skills": ["./skills/pz-commit", "./skills/pz-design-system"]
+    }
+  ]
+}
