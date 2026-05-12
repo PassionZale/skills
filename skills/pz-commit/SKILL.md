@@ -1,41 +1,51 @@
 ---
 name: "pz-commit"
-description: Create git commits that follow the Conventional Commits specification, use when user asks to "commit", "commit this".
+description: Create git commits following the Conventional Commits specification. Use when the user says "commit", "commit this", "make a commit".
 ---
 
-创建符合 Conventional Commits 规范的 git commits。
+## Commit Generator
 
-## 核心原则
+Creates well-structured git commits following the [Conventional Commits](https://www.conventionalcommits.org/) specification.
 
-1. **不要添加任何营销广告** - 禁止在提交信息中添加任何营销广告或推广链接，例如 "Generated with [Claude Code](https://claude.ai/code)"
-2. **使用中文** - Subject 和 Body 必须使用中文
-3. **简洁明了** - Subject 最多 50 个字符，Body 高度概括
-4. **祈使语气** - 使用"添加"而非"添加了"
+## Constraints
 
-## 步骤
+- **No marketing footers** — never append lines like `Generated with Claude Code (https://claude.ai/code)` or any promotional content to commit messages.
+- **Chinese subject and body** — the `<subject>` and `<body>` must be written in Chinese.
+- **Imperative mood** — use "添加" not "添加了", "修复" not "修复了".
+- **Subject ≤ 50 characters** — no trailing period.
 
-### 1. 检查暂存状态
+---
 
-运行 `git diff --staged --stat`, 检查暂存更改:
+## Step 1 — Inspect staged state
 
-- **存在已暂存的更改** → 这些更改即为提交范围。请勿考虑未暂存或未跟踪的文件——用户已通过暂存操作表明了哪些内容属于此次提交
-- **没有暂存任何内容** → 将所有未暂存的修改和未跟踪的文件都视为候选对象。使用会话上下文和差异来决定暂存和提交哪些内容
+```bash
+git diff --staged --stat
+```
 
-### 2. 分析暂存内容
+**Decision logic:**
+
+- If staged changes exist → treat only those as the commit scope; ignore unstaged and untracked files entirely.
+- If nothing is staged → treat all modified and untracked files as candidates; use session context and diffs to decide what to stage.
+
+---
+
+## Step 2 — Analyze the diff
 
 ```bash
 git diff --staged
 ```
 
-分析：
+Extract:
 
-- 哪些文件更改了
-- 更改的性质（功能、修复、重构、文档等）
-- 受影响的模块/范围
+- Which files changed
+- Nature of each change (feature, bug fix, refactor, docs, etc.)
+- Affected module or scope
 
-### 3. 生成提交信息
+---
 
-严格按照此格式生成提交信息：
+## Step 3 — Construct the commit message
+
+Use the following format:
 
 ```
 <type>(<scope>): <subject>
@@ -43,62 +53,67 @@ git diff --staged
 <body>
 ```
 
-#### Type 类型
+### type
 
-- **feat**: 新功能
-- **fix**: 修复 bug
-- **docs**: 仅文档更改
-- **style**: 格式化、空格等
-- **refactor**: 代码重构
-- **perf**: 性能改进
-- **test**: 添加或更新测试
-- **chore**: 维护任务、依赖更新
-- **ci**: CI 配置更改
-- **build**: 构建系统更改
-- **revert**: 回退提交
+| Value      | When to use                              |
+| ---------- | ---------------------------------------- |
+| `feat`     | New feature                              |
+| `fix`      | Bug fix                                  |
+| `docs`     | Documentation only                       |
+| `style`    | Formatting, whitespace, no logic change  |
+| `refactor` | Code restructure without behavior change |
+| `perf`     | Performance improvement                  |
+| `test`     | Adding or updating tests                 |
+| `chore`    | Maintenance, dependency updates          |
+| `ci`       | CI/CD configuration changes              |
+| `build`    | Build system changes                     |
+| `revert`   | Reverting a previous commit              |
 
-#### Scope 范围
+### scope
 
-- **有明确范围**：使用模块名（如 `auth`, `api`, `ui`）
-- **范围不明确**：省略 scope，直接写 `<type>: <subject>`
+- Use the affected module name when clear (e.g., `auth`, `api`, `ui`).
+- Omit scope entirely when changes span multiple modules or the scope is unclear.
 
-#### Subject 主题
+### subject (中文)
 
-- 使用中文
-- 最多 50 个字符
-- 末尾不加句号
-- 祈使语气（"添加"而非"添加了"）
+- Written in Chinese, imperative mood
+- ≤ 50 characters, no trailing period
+- Be specific — avoid vague messages like "update" or "fix stuff"
 
-**避免使用**：
+### body (中文, optional)
 
-- 模糊的主题，如："update"、"fix stuff"
-- 过长或重点不突出的主题
+- Written in Chinese
+- Explain _what_ changed and _why_, not _how_
+- Keep it concise — high-level summary only
 
-#### Body 正文（可选）
+---
 
-- 使用中文
-- 简洁明了，高度概括
-- 解释做什么和为什么（不是怎么做）
-
-### 4. 创建提交
+## Step 4 — Create the commit
 
 ```bash
 git commit -m "<message>"
 git log -1 --stat
 ```
 
-## 示例
+---
+
+## Examples
+
+Minimal:
 
 ```
 feat(auth): 添加 JWT 令牌验证
 ```
 
+With body:
+
 ```
 feat(auth): 添加 JWT 登录流程
 
-- 实现了 JWT 令牌验证逻辑
-- 为验证组件添加了文档说明
+实现令牌验证逻辑，为验证组件补充文档说明
 ```
+
+No scope:
 
 ```
 docs: 更新 README 安装说明
