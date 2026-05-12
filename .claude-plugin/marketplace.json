@@ -14,7 +14,15 @@
       "description": "utility tools for daily work efficiency",
       "source": "./",
       "strict": false,
-      "skills": ["./skills/pz-commit", "./skills/pz-design-system"]
+      "skills": [
+        "./skills/pz-commit",
+        "./skills/pz-design-system",
+				"./skills/pz-session-recall",
+				"./skills/pz-session-diary",
+				"./skills/pz-session-reflect",
+        "./skills/pz-tapd-scm-keywords",
+        "./skills/pz-tapd-story-to-tasks"
+      ]
     }
   ]
 }
