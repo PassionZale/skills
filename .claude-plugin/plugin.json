@@ -1,0 +1,16 @@
+{
+  "name": "passionzale-skills",
+  "description": "Skills shared by Lei Zhang for improving daily work efficiency",
+  "version": "1.0.0",
+  "author": {
+    "name": "Lei Zhang"
+  },
+  "skills": [
+    "./skills/personal/agent-rule-update",
+    "./skills/personal/git-commit",
+    "./skills/personal/tapd-copy-keywords",
+    "./skills/personal/tapd-story-breakdown",
+		"./skills/external/codebase-onboarding",
+		"./skills/external/design-system"
+  ]
+}

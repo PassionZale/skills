@@ -1,0 +1,3 @@
+# domain references (keep .gitkeep only)
+references/domains/
+!references/domains/.gitkeep
