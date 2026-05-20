@@ -312,7 +312,7 @@ def get_story(story_id: str, workspace_id: Optional[str] = None) -> None:
 """
 
     # 写入 prd.md
-    prd_file = Path(__file__).parent.parent / ".stories" / long_story_id / "prd.md"
+    prd_file = Path.cwd() / "stories" / long_story_id / "prd.md"
     prd_file.parent.mkdir(parents=True, exist_ok=True)
     prd_file.write_text(agent_prompt, "utf-8")
 

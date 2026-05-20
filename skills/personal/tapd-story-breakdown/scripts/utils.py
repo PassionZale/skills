@@ -204,7 +204,7 @@ def analyze_image_with_vision(url: str, context: str = "") -> str:
 
 def download_attachments(story_id: str, workspace_id: str) -> list[Path]:
     """
-    下载需求的 HTML 和 ZIP 附件到 skill_dir/.stories/{story_id}/attachments/
+    下载需求的 HTML 和 ZIP 附件到 {PWD}/stories/{story_id}/attachments/
 
     Args:
         story_id: 需求长 ID
@@ -224,7 +224,7 @@ def download_attachments(story_id: str, workspace_id: str) -> list[Path]:
         },
     )
 
-    attach_dir = Path(__file__).parent.parent / ".stories" / story_id / "attachments"
+    attach_dir = Path.cwd() / "stories" / story_id / "attachments"
 
     # 过滤 html 和 zip 附件
     filtered = []
