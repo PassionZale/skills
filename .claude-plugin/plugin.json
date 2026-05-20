@@ -1,0 +1,12 @@
+{
+  "name": "passionzale-skills",
+  "description": "Skills shared by Lei Zhang for improving daily work efficiency",
+  "version": "1.0.0",
+  "author": {
+    "name": "Lei Zhang"
+  },
+  "skills": [
+    "./skills/personal/agent-claude-rule-update",
+    "./skills/personal/git-commit"
+  ]
+}
