@@ -6,7 +6,7 @@
     "name": "Lei Zhang"
   },
   "skills": [
-    "./skills/personal/agent-claude-rule-update",
+    "./skills/personal/agent-rule-update",
     "./skills/personal/git-commit"
   ]
 }

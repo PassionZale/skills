@@ -1,5 +1,5 @@
 ---
-name: "agent-claude-rule-update"
+name: "agent-rule-update"
 description: 更新 CLAUDE.md.
 disable-model-invocation: true
 ---
