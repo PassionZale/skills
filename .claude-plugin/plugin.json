@@ -7,6 +7,10 @@
   },
   "skills": [
     "./skills/personal/agent-rule-update",
-    "./skills/personal/git-commit"
+    "./skills/personal/git-commit",
+    "./skills/personal/tapd-copy-keywords",
+    "./skills/personal/tapd-story-breakdown",
+		"./skills/external/codebase-onboarding",
+		"./skills/external/design-system"
   ]
 }
