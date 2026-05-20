@@ -9,8 +9,6 @@ try:
 except ImportError:
     print("Error: requests module not found. Install with: pip install requests")
 
-from typings import EnvConfig
-
 
 def run_command(cmd: str) -> dict:
     """Run a shell command and return result."""
@@ -40,30 +38,46 @@ def get_project_name() -> str | None:
     repo_name = get_git_repo_name() or os.path.basename(os.getcwd())
     return repo_name
 
-def load_env() -> EnvConfig:
-    """
-    从 skill 目录的 .env 文件加载环境配置
 
-    Returns:
-        包含 TAPD_WORKSPACE_ID、TAPD_ACCESS_TOKEN 的配置字典
-    """
-    skill_dir = Path(__file__).parent.parent
-    env_file = skill_dir / ".env"
+def load_env_file(p: str) -> dict[str, str]:
+    env: dict[str, str] = {}
+    try:
+        with open(p, "r", encoding="utf8") as f:
+            content = f.read()
+    except OSError:
+        return {}
 
-    if not env_file.exists():
-        print(f"Error: .env file not found at {env_file}")
-        print("Please copy .env.example to .env and configure your settings.")
-        sys.exit(1)
+    for line in content.splitlines():
+        trimmed = line.strip()
+        if not trimmed or trimmed.startswith("#"):
+            continue
+        idx = trimmed.find("=")
+        if idx == -1:
+            continue
+        key = trimmed[:idx].strip()
+        val = trimmed[idx + 1:].strip()
+        if (val.startswith('"') and val.endswith('"')) or \
+           (val.startswith("'") and val.endswith("'")):
+            val = val[1:-1]
+        env[key] = val
 
-    config = {}
+    return env
 
-    with open(env_file) as lines:
-        for line in lines:
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                key, value = line.split("=", 1)
-                config[key.strip()] = value.strip()
-    return config    
+
+def load_env() -> None:
+    home = Path.home()
+    cwd = Path.cwd()
+
+    home_env = load_env_file(home / ".passionzale-skills" / ".env")
+    cwd_env = load_env_file(cwd / ".passionzale-skills" / ".env")
+
+    for k, v in home_env.items():
+        if k not in os.environ:
+            os.environ[k] = v
+
+    for k, v in cwd_env.items():
+        if k not in os.environ:
+            os.environ[k] = v
 
 
 def make_request(
@@ -87,10 +101,8 @@ def make_request(
     Raises:
         requests.HTTPError: 请求失败时抛出异常
     """
-    config = load_env()
-
     headers = {
-        "Authorization": f"Bearer {config['TAPD_ACCESS_TOKEN']}",
+        "Authorization": f"Bearer {os.environ['TAPD_ACCESS_TOKEN']}",
         "Content-Type": "application/json",
     }
 

@@ -1,12 +1,12 @@
 import argparse
+import os
 import sys
 from typing import Optional
 from utils import load_env, to_long_id, make_request
 
 
 def get_scm_copy_keywords(story_id: str, workspace_id: Optional[str] = None) -> None:
-    config = load_env()
-    workspace_id = workspace_id or config["TAPD_WORKSPACE_ID"]
+    workspace_id = workspace_id or os.environ.get("TAPD_WORKSPACE_ID", "")
 
     if not workspace_id:
         print("Error: the following arguments are required: --workspace")
@@ -28,6 +28,8 @@ def get_scm_copy_keywords(story_id: str, workspace_id: Optional[str] = None) -> 
 
 
 if __name__ == "__main__":
+    load_env()
+
     parser = argparse.ArgumentParser(description="获取需求详情")
     parser.add_argument("--story", "-s", required=True, help="Story ID")
     parser.add_argument("--workspace", "-w", required=False, help="Workspace ID")

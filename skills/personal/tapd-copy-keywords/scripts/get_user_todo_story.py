@@ -1,6 +1,7 @@
 import argparse
-import sys
 import json
+import os
+import sys
 from typing import Optional
 from utils import load_env, make_request, get_project_name
 
@@ -49,8 +50,7 @@ def filter_stories(stories_data: dict) -> list:
 
 
 def get_user_todo_story(workspace_id: Optional[str] = None) -> None:
-    config = load_env()
-    workspace_id = workspace_id or config["TAPD_WORKSPACE_ID"]
+    workspace_id = workspace_id or os.environ.get("TAPD_WORKSPACE_ID", "")
 
     if not workspace_id:
         print("Error: the following arguments are required: --workspace")
@@ -73,6 +73,8 @@ def get_user_todo_story(workspace_id: Optional[str] = None) -> None:
 
 
 if __name__ == "__main__":
+    load_env()
+
     parser = argparse.ArgumentParser(description="获取当前用户的待办 story 列表")
     parser.add_argument("--workspace", "-w", required=False, help="Workspace ID")
 
