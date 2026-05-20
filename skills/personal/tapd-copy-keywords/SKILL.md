@@ -19,6 +19,16 @@ disable-model-invocation: true
 - `--s <story_id>` (number, 可选): TAPD 需求 ID
 - `--w <workspace_id>` (number, 可选): TAPD 工作空间 ID
 
+## 用户输入工具
+
+当此 skill 需要向用户提问时，按以下优先级规则选择工具：
+
+1. **优先使用内置工具**：使用当前 agent runtime 提供的内置用户输入工具，例如 `AskUserQuestion`、`request_user_input`、`clarify`、`ask_user` 或任何等效工具。
+2. **降级方案**：如果没有任何内置工具可用，则输出带编号的纯文本消息，让用户回复数字/答案。
+3. **批量提问**：如果工具支持一次问多个问题，则合并到一次调用中；如果只支持单问题，则按优先级逐个提问。
+
+下文中的 `AskUserQuestion` 引用仅为示例 — 在其他 runtime 中请使用本地等效工具。
+
 ## 脚本目录
 
 脚本位于 `scripts/` 子目录。`${BASE_DIR}` = 本 SKILL.md 所在目录。将 `${BASE_DIR}` 替换为实际值。

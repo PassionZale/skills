@@ -1,0 +1,6 @@
+# stories cache (attachments + prd)
+.stories/
+
+# domain references (keep .gitkeep only)
+references/domains/
+!references/domains/.gitkeep
