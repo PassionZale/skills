@@ -130,7 +130,7 @@ def to_long_id(story_id: str, workspace_id: str, is_cloud: bool = True) -> str:
 
 def analyze_image_with_vision(url: str, context: str = "") -> str:
     """
-    使用智谱 GLM-4.6V FlashX 视觉模型解析图片内容
+    使用智谱 GLM 视觉模型解析图片内容
 
     Args:
         url: 图片 URL
@@ -139,9 +139,20 @@ def analyze_image_with_vision(url: str, context: str = "") -> str:
     Returns:
         图片内容描述文本，失败或无 API Key 时返回空字符串
     """
-    api_key = os.environ.get("GLM_API_KEY", "")
+    api_key = os.environ.get("ZAI_API_KEY", "")
+    base_url = os.environ.get("ZAI_BASE_URL", "")
+    model = os.environ.get("ZAI_VISION_MODEL", "")
 
     if not api_key:
+        print("Warning: ZAI_API_KEY not set. Image analysis will be skipped.")
+        return ""
+
+    if not base_url:
+        print("Warning: ZAI_BASE_URL not set. Image analysis will be skipped.")
+        return ""
+
+    if not model:
+        print("Warning: ZAI_VISION_MODEL not set. Image analysis will be skipped.")
         return ""
 
     # 构建带上下文的 user prompt（按句子截断）
@@ -167,14 +178,15 @@ def analyze_image_with_vision(url: str, context: str = "") -> str:
     session.mount("https://", HTTPAdapter(max_retries=retry))
 
     try:
+        api_url = urljoin(base_url, "/chat/completions")
         response = session.post(
-            "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions",
+            api_url,
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
             json={
-                "model": "glm-4.6v",
+                "model": model,
                 "messages": [
                     {
                         "role": "system",
@@ -265,7 +277,7 @@ def download_attachments(story_id: str, workspace_id: str) -> list[Path]:
 
 def analyze_html_with_llm(html_content: str, filename: str) -> str:
     """
-    使用 GLM-4.7-Flash 文本模型分析 HTML 原型稿内容
+    使用 GLM 文本模型分析 HTML 原型稿内容
 
     Args:
         html_content: HTML 文件内容
@@ -274,9 +286,20 @@ def analyze_html_with_llm(html_content: str, filename: str) -> str:
     Returns:
         分析结果文本，失败或无 API Key 时返回空字符串
     """
-    api_key = os.environ.get("GLM_API_KEY", "")
+    api_key = os.environ.get("ZAI_API_KEY", "")
+    base_url = os.environ.get("ZAI_BASE_URL", "")
+    model = os.environ.get("ZAI_BASE_MODEL", "")
 
     if not api_key:
+        print("Warning: ZAI_API_KEY not set. HTML analysis will be skipped.")
+        return ""
+
+    if not base_url:
+        print("Warning: ZAI_BASE_URL not set. HTML analysis will be skipped.")
+        return ""
+
+    if not model:
+        print("Warning: ZAI_BASE_MODEL not set. HTML analysis will be skipped.")
         return ""
 
     session = requests.Session()
@@ -289,14 +312,15 @@ def analyze_html_with_llm(html_content: str, filename: str) -> str:
     session.mount("https://", HTTPAdapter(max_retries=retry))
 
     try:
+        api_url = urljoin(base_url, "/chat/completions")
         response = session.post(
-            "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions",
+            api_url,
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
             json={
-                "model": "glm-4.5-air",
+                "model": model,
                 "messages": [
                     {"role": "system", "content": PROTOTYPE_PROMPT},
                     {"role": "user", "content": html_content},
@@ -310,6 +334,6 @@ def analyze_html_with_llm(html_content: str, filename: str) -> str:
         data = response.json()
         return data["choices"][0]["message"]["content"]
     except Exception:
-        return ""        
+        return ""
     finally:
         session.close()

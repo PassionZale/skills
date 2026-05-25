@@ -118,7 +118,8 @@ async function callVision(
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
-    const res = await fetch(`${BASE_URL}chat/completions`, {
+    const url = new URL('/chat/completions', BASE_URL);
+    const res = await fetch(url.toString(), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${API_KEY}`,
