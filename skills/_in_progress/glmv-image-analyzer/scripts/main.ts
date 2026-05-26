@@ -46,8 +46,8 @@ loadEnv();
 
 const API_KEY = process.env.ZAI_API_KEY || "";
 const BASE_URL =
-  process.env.ZAI_BASE_URL || "https://open.bigmodel.cn/api/paas/v4/";
-const VISION_MODEL = process.env.ZAI_VISION_MODEL || "glm-4.6v";
+  process.env.ZAI_BASE_URL || "https://open.bigmodel.cn/api/paas/v4";
+const VISION_MODEL = process.env.ZAI_VISION_MODEL || "glm-4.6v-flash";
 const TIMEOUT_MS = 300_000;
 
 if (!API_KEY) {
@@ -118,8 +118,7 @@ async function callVision(
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
-    const url = new URL('/chat/completions', BASE_URL);
-    const res = await fetch(url.toString(), {
+    const res = await fetch(`${BASE_URL}/chat/completions`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${API_KEY}`,
@@ -448,16 +447,15 @@ function requireArg(args: Record<string, string>, name: string): string {
 const tools: Record<string, ToolHandler> = {
   async analyze(args) {
     const imageSource = requireArg(args, "image_source");
-    const prompt = requireArg(args, "prompt");
+    const userPrompt = requireArg(args, "user_prompt");
     const image = processImageSource(imageSource);
-    return callVision(PROMPTS.analyze, prompt, [image]);
+    return callVision(PROMPTS.analyze, userPrompt, [image]);
   },
 
   async ocr(args) {
     const imageSource = requireArg(args, "image_source");
-    const prompt = requireArg(args, "prompt");
+    let userPrompt = requireArg(args, "user_prompt");
     const image = processImageSource(imageSource);
-    let userPrompt = prompt;
     if (args.programming_language) {
       userPrompt += `\n\n<language_hint>The code is in ${args.programming_language}.</language_hint>`;
     }
@@ -466,9 +464,8 @@ const tools: Record<string, ToolHandler> = {
 
   async error(args) {
     const imageSource = requireArg(args, "image_source");
-    const prompt = requireArg(args, "prompt");
+    let userPrompt = requireArg(args, "user_prompt");
     const image = processImageSource(imageSource);
-    let userPrompt = prompt;
     if (args.context) {
       userPrompt += `\n\n<error_context>This error occurred ${args.context}.</error_context>`;
     }
@@ -477,9 +474,8 @@ const tools: Record<string, ToolHandler> = {
 
   async diagram(args) {
     const imageSource = requireArg(args, "image_source");
-    const prompt = requireArg(args, "prompt");
+    let userPrompt = requireArg(args, "user_prompt");
     const image = processImageSource(imageSource);
-    let userPrompt = prompt;
     if (args.diagram_type) {
       userPrompt += `\n\n<diagram_type_hint>This is a ${args.diagram_type} diagram.</diagram_type_hint>`;
     }
@@ -488,19 +484,18 @@ const tools: Record<string, ToolHandler> = {
 
   async "data-viz"(args) {
     const imageSource = requireArg(args, "image_source");
-    const prompt = requireArg(args, "prompt");
+    let userPrompt = requireArg(args, "user_prompt");
     const image = processImageSource(imageSource);
-    let userPrompt = prompt;
     if (args.analysis_focus) {
       userPrompt += `\n\n<analysis_focus>Focus particularly on: ${args.analysis_focus}.</analysis_focus>`;
     }
     return callVision(PROMPTS.dataViz, userPrompt, [image]);
   },
 
-  async "ui-to-code"(args) {
+  async "ui_to_artifact"(args) {
     const imageSource = requireArg(args, "image_source");
     const outputType = requireArg(args, "output_type");
-    const prompt = requireArg(args, "prompt");
+    const userPrompt = requireArg(args, "user_prompt");
     const image = processImageSource(imageSource);
 
     const prompts = PROMPTS.uiToCode as Record<string, string>;
@@ -510,13 +505,13 @@ const tools: Record<string, ToolHandler> = {
         `Invalid output_type: '${outputType}'. Must be one of: code, prompt, spec, description`
       );
     }
-    return callVision(systemPrompt, prompt, [image]);
+    return callVision(systemPrompt, userPrompt, [image]);
   },
 
   async "ui-diff"(args) {
     const expected = requireArg(args, "expected_image_source");
     const actual = requireArg(args, "actual_image_source");
-    const prompt = requireArg(args, "prompt");
+    const userPrompt = requireArg(args, "user_prompt");
 
     const images = [processImageSource(expected), processImageSource(actual)];
     const enhancedPrompt = `<images>
@@ -524,7 +519,7 @@ The first image is the EXPECTED/REFERENCE design (the target).
 The second image is the ACTUAL/CURRENT implementation (what needs to be checked).
 </images>
 
-${prompt}`;
+${userPrompt}`;
     return callVision(PROMPTS.uiDiff, enhancedPrompt, images);
   },
 };
@@ -534,31 +529,31 @@ ${prompt}`;
 const TOOL_HELP: Record<string, { desc: string; usage: string }> = {
   analyze: {
     desc: "General-purpose image analysis",
-    usage: "--image_source <path|url> --prompt <text>",
+    usage: "--image_source <path|url> --user_prompt <text>",
   },
   ocr: {
     desc: "Extract text from screenshots (OCR)",
-    usage: "--image_source <path|url> --prompt <text> [--programming_language <lang>]",
+    usage: "--image_source <path|url> --user_prompt <text> [--programming_language <lang>]",
   },
   error: {
     desc: "Diagnose error screenshots",
-    usage: "--image_source <path|url> --prompt <text> [--context <text>]",
+    usage: "--image_source <path|url> --user_prompt <text> [--context <text>]",
   },
   diagram: {
     desc: "Analyze technical diagrams",
-    usage: "--image_source <path|url> --prompt <text> [--diagram_type <type>]",
+    usage: "--image_source <path|url> --user_prompt <text> [--diagram_type <type>]",
   },
   "data-viz": {
     desc: "Analyze data visualizations and charts",
-    usage: "--image_source <path|url> --prompt <text> [--analysis_focus <focus>]",
+    usage: "--image_source <path|url> --user_prompt <text> [--analysis_focus <focus>]",
   },
-  "ui-to-code": {
+  "ui_to_artifact": {
     desc: "Convert UI screenshots to code/prompt/spec/description",
-    usage: "--image_source <path|url> --output_type <code|prompt|spec|description> --prompt <text>",
+    usage: "--image_source <path|url> --output_type <code|prompt|spec|description> --user_prompt <text>",
   },
   "ui-diff": {
     desc: "Compare two UI screenshots",
-    usage: "--expected_image_source <path|url> --actual_image_source <path|url> --prompt <text>",
+    usage: "--expected_image_source <path|url> --actual_image_source <path|url> --user_prompt <text>",
   },
 };
 
