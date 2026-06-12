@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "baoyu-translate": {
+      "source": "JimLiu/baoyu-skills",
+      "sourceType": "github",
+      "skillPath": "skills/baoyu-translate/SKILL.md",
+      "computedHash": "2755d2038b2527241d86082c655649dbddcc42fbaf821ca182c026baa6820207"
+    },
     "grill-me": {
       "source": "mattpocock/skills",
       "sourceType": "github",
