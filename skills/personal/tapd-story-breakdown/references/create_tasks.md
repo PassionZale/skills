@@ -12,7 +12,7 @@
 [
   {
     "domain": "domain, 例如: yos-web, 不存在则为 null",
-    "dimension": "任务维度, 例如: C1",
+    "dimension": "任务维度, 例如: M1",
     "name": "任务名称",
     "description": "任务描述",
     "effort": "任务工时 (number)"
