@@ -150,6 +150,7 @@ python3 ${BASE_DIR}/scripts/get_story.py --s <story_id> --w <workspace_id>
 | `references/domains/<domain>-reference/SKILL.md` | 领域的项目架构与开发约定  | Step 3，完整读取     |
 | `references/effort_rules.md`                     | 工时评估基准规则          | Step 4，每次必读     |
 | `references/create_tasks.md`                     | 在 TAPD 创建任务          | 当用户要求创建任务时 |
+| `references/sync_domains.md`                     | 同步项目代码库到领域    | 当用户要求同步领域时 |
 
 ## 注意事项
 
