@@ -52,6 +52,7 @@ def main():
         try:
             cmd = [
                 "npx",
+                "--yes",
                 "repomix",
                 str(path),
                 "--skill-generate",
