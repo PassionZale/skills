@@ -178,7 +178,7 @@ def analyze_image_with_vision(url: str, context: str = "") -> str:
     session.mount("https://", HTTPAdapter(max_retries=retry))
 
     try:
-        api_url = urljoin(base_url, "/chat/completions")
+        api_url = f"{base_url.rstrip('/')}/chat/completions"
         response = session.post(
             api_url,
             headers={
@@ -208,7 +208,8 @@ def analyze_image_with_vision(url: str, context: str = "") -> str:
         response.raise_for_status()
         data = response.json()
         return data["choices"][0]["message"]["content"]
-    except Exception:
+    except Exception as e:
+        print(f"Warning: 视觉模型分析失败（{url}）: {type(e).__name__}: {e}")
         return ""
     finally:
         session.close()
@@ -312,7 +313,7 @@ def analyze_html_with_llm(html_content: str, filename: str) -> str:
     session.mount("https://", HTTPAdapter(max_retries=retry))
 
     try:
-        api_url = urljoin(base_url, "/chat/completions")
+        api_url = f"{base_url.rstrip('/')}/chat/completions"
         response = session.post(
             api_url,
             headers={
@@ -333,7 +334,8 @@ def analyze_html_with_llm(html_content: str, filename: str) -> str:
         response.raise_for_status()
         data = response.json()
         return data["choices"][0]["message"]["content"]
-    except Exception:
+    except Exception as e:
+        print(f"Warning: HTML 原型稿分析失败（{filename}）: {type(e).__name__}: {e}")
         return ""
     finally:
         session.close()

@@ -16,6 +16,7 @@ import sys
 import concurrent.futures
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse, parse_qs
 try:
     from bs4 import BeautifulSoup, NavigableString
 except ImportError:
@@ -47,28 +48,63 @@ def get_tapd_image(src: str, workspace_id: str) -> tuple[str, str]:
     """
     获取图片下载 URL（不含视觉模型调用）
 
+    支持两种 TAPD 内部图片路径：
+      1. 裸相对路径：/tfl/captures/...
+      2. 完整 URL 的 query string：https://file.tapd.cn/compress/...?src=/tfl/captures/...
+
+    内部图调用 /files/get_image 换取原图下载 URL；
+    非内部图，或换链失败时，回退到原 src 保证图片仍可用。
+
     Args:
-        src: 图片 src 路径（可能是 /tfl/ 相对路径或完整 URL）
+        src: 图片 src 路径（裸 /tfl/ 路径、含 /tfl/ query 的完整 URL，或其他完整 URL）
         workspace_id: TAPD 工作区 ID
 
     Returns:
         (original_src, download_url) 元组
     """
-    url = src
+    image_path = _extract_tfl_path(src)
 
-    # 如果是 /tfl/ 路径，调用 TAPD API 获取下载 URL
-    if src.startswith("/tfl/"):
+    # 非 TAPD 内部图，直接用原 src
+    if not image_path:
+        return (src, src)
+
+    try:
         response: ImageResponse = make_request(
             "GET",
             "/files/get_image",
             params={
                 "workspace_id": workspace_id,
-                "image_path": src,
+                "image_path": image_path,
             },
         )
-        url = response["data"]["Attachment"]["download_url"]
+        download_url = response["data"]["Attachment"]["download_url"]
+        return (src, download_url)
+    except Exception:
+        # 换链失败（API 异常或字段缺失）时回退原 src，避免中断整篇解析
+        return (src, src)
 
-    return (src, url)
+
+def _extract_tfl_path(src: str) -> str:
+    """
+    从 src 中提取 /tfl/ 图片路径
+
+    支持两种形式：
+      - 裸 /tfl/ 相对路径：直接返回
+      - 完整 URL：从 query string 的 src 参数中提取
+
+    提取不到返回空串。
+    """
+    # 形式一：裸 /tfl/ 相对路径
+    if src.startswith("/tfl/"):
+        return src
+
+    # 形式二：完整 URL，从 query string 的 src 参数提取
+    # parse_qs 会自动 URL 解码，%2Ftfl%2F 也能识别
+    for value in parse_qs(urlparse(src).query).get("src", []):
+        if value.startswith("/tfl/"):
+            return value
+
+    return ""
 
 
 def get_surrounding_text(img_tag, char_limit: int = 200) -> str:
