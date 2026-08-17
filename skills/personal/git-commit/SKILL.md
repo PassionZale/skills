@@ -1,6 +1,8 @@
 ---
 name: git-commit
 description: 创建符合 Conventional Commits 规范的 git commit. 当用户说 "commit", "commit this", "make a commit" 时触发.
+context: fork
+agent: Explore
 ---
 
 创建符合 Conventional Commits 规范的 git commit.

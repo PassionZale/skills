@@ -2,6 +2,8 @@
 name: tapd-copy-keywords
 description: 创建符合 Conventional Commits 规范的 git commit，自动关联 TAPD 代办需求的源码关键字。
 disable-model-invocation: true
+context: fork
+agent: Explore
 ---
 
 创建符合 Conventional Commits 规范的 git commit，自动关联 TAPD 代办需求的源码关键字。
