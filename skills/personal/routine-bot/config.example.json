@@ -1,0 +1,19 @@
+{
+  "projects": {
+    "your-project-name": {
+      "gitlabProjectId": 0,
+      "targetBranches": {
+        "dev": "dev",
+        "beta": "beta",
+        "uat": "prod",
+        "prod": "prod"
+      },
+      "jenkinsJobs": {
+        "dev": "your-project-name-dev",
+        "beta": "your-project-name-beta",
+        "uat": "your-project-name-uat",
+        "prod": "your-project-name-prod"
+      }
+    }
+  }
+}
