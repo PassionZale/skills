@@ -117,7 +117,7 @@ def create_tasks(
             "creator": nick,  # 创建人
             "owner": nick,  # 负责人
             "custom_field_28": story["custom_field_28"], # 自定义字段(项目名称)
-            "custom_field_56": "前端研发",  # 自定义字段
+            "custom_field_56": "前端WEB",  # 自定义字段
         }
 
         print_json(task_data)
