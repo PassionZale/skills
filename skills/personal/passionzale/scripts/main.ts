@@ -1,7 +1,7 @@
 /**
- * routine-bot - GitLab MR / Jenkins 构建命令行工具
+ * passionzale - GitLab MR / Jenkins 构建命令行工具
  *
- * 项目映射: ~/.passionzale-skills/routine-bot.json (模板见本 skill 目录下 config.example.json)
+ * 项目映射: ~/.passionzale-skills/passionzale.json (模板见本 skill 目录下 config.example.json)
  */
 
 import { execSync } from "child_process";
@@ -88,7 +88,7 @@ function loadEnv(): void {
 
 // ─── Config Loading ──────────────────────────────────────────────────────────
 
-const CONFIG_PATH = resolve(homedir(), ".passionzale-skills", "routine-bot.json");
+const CONFIG_PATH = resolve(homedir(), ".passionzale-skills", "passionzale.json");
 
 function loadConfig(): RoutineBotConfig {
   if (!existsSync(CONFIG_PATH)) {
@@ -153,7 +153,6 @@ function getCurrentBranch(): string {
 interface ProjectContext {
   projectName: string;
   projectId: number;
-  targetBranch?: string;
   jobName?: string;
 }
 
@@ -161,12 +160,12 @@ interface ProjectContext {
  * 解析当前项目上下文:
  * - projectName 取自 git remote，可用 --project 覆盖
  * - env 合法性由该项目配置的 targetBranches / jenkinsJobs 键动态决定
- * - targetBranch / jobName 按 env 从配置映射（传入 env 时才解析）
+ * - need.jobName 时（build）env 必填并解析 jobName；其余命令 env 可选（提供时校验）
  */
 function resolveProject(
   config: RoutineBotConfig,
   options: { project?: string; env?: string },
-  need: { targetBranch?: boolean; jobName?: boolean } = {}
+  need: { jobName?: boolean } = {}
 ): ProjectContext {
   const projectName = options.project || getCurrentProjectName();
 
@@ -184,9 +183,8 @@ function resolveProject(
     throw new Error(`项目 "${projectName}" 的 gitlabProjectId 配置无效`);
   }
 
-  // 需要 env 的命令（build/mr），env 必填且必须在该项目配置中定义
-  const needsEnv = need.targetBranch === true || need.jobName === true;
-  if (needsEnv && options.env === undefined) {
+  // build 需要 env 从配置解析 jobName；其他命令 env 可选，提供时校验
+  if (need.jobName && options.env === undefined) {
     throw new Error("缺少 --env 参数");
   }
 
@@ -206,21 +204,10 @@ function resolveProject(
     }
   }
 
-  if (!Number.isInteger(project.gitlabProjectId)) {
-    throw new Error(`项目 "${projectName}" 的 gitlabProjectId 配置无效`);
-  }
-
   const ctx: ProjectContext = {
     projectName,
     projectId: project.gitlabProjectId,
   };
-
-  if (need.targetBranch) {
-    ctx.targetBranch = project.targetBranches?.[options.env!];
-    if (!ctx.targetBranch) {
-      throw new Error(`项目 "${projectName}" 缺少 targetBranches.${options.env} 配置`);
-    }
-  }
 
   if (need.jobName) {
     ctx.jobName = project.jenkinsJobs?.[options.env!];
@@ -519,17 +506,34 @@ async function cmdBuild(config: RoutineBotConfig, options: { env?: string; proje
 }
 
 /** 创建 Merge Request */
-async function cmdCreateMr(config: RoutineBotConfig, options: { env?: string; project?: string }) {
-  const ctx = resolveProject(config, options, { targetBranch: true });
-  const sourceBranch = getCurrentBranch();
+async function cmdCreateMr(
+  config: RoutineBotConfig,
+  options: { env?: string; sourceBranch?: string; targetBranch?: string; project?: string }
+) {
+  const ctx = resolveProject(config, options);
+
+  // 源分支：显式指定优先，默认当前检出的分支
+  const sourceBranch = options.sourceBranch || getCurrentBranch();
+
+  // 目标分支：显式指定优先于环境映射
+  let targetBranch = options.targetBranch;
+  if (!targetBranch) {
+    if (!options.env) {
+      throw new Error("缺少目标分支：请提供 --target-branch，或提供 --env 以使用环境映射");
+    }
+    targetBranch = config.projects[ctx.projectName]?.targetBranches?.[options.env];
+    if (!targetBranch) {
+      throw new Error(`项目 "${ctx.projectName}" 缺少 targetBranches.${options.env} 配置`);
+    }
+  }
 
   const mr = await gitlabRequest<GitlabMergeRequest>(
     "POST",
     `projects/${ctx.projectId}/merge_requests`,
     {
       source_branch: sourceBranch,
-      target_branch: ctx.targetBranch,
-      title: `Merge ${sourceBranch} into ${ctx.targetBranch} Via routine-bot`,
+      target_branch: targetBranch,
+      title: `Merge ${sourceBranch} into ${targetBranch} Via passionzale`,
     }
   );
 
@@ -566,24 +570,26 @@ async function cmdMergeMr(
 // ─── CLI ─────────────────────────────────────────────────────────────────────
 
 function usage(): string {
-  return `routine-bot - GitLab MR / Jenkins 构建命令行工具
+  return `passionzale - GitLab MR / Jenkins 构建命令行工具
 
 用法: bun main.ts <command> [options]
 
 Commands:
   jobs                          列出 Jenkins Jobs
   build    --env <env>          触发 Jenkins Job 构建
-  mr       --env <env>          创建 Merge Request（当前分支 -> 目标分支）
+  mr       --env <env>          创建 Merge Request（当前分支 -> 环境映射分支）
   merge    --iid <iid>          等待 MR 可合并后合并（2s 轮询，2min 超时）
 
 Options:
-  --env <env>        环境名（取值由 ~/.passionzale-skills/routine-bot.json 中该项目的配置键决定）
-  --iid <number>     Merge Request 的 IID（merge 必需）
-  --project <name>   项目名覆盖（默认从 git remote origin 自动识别）
-  -h, --help         显示帮助
+  --env <env>              环境名（取值由 ~/.passionzale-skills/passionzale.json 中该项目的配置键决定）
+  --source-branch <branch> MR 源分支（默认当前检出的分支）
+  --target-branch <branch> MR 目标分支（显式指定优先于 --env 的环境映射；与 --env 至少提供其一）
+  --iid <number>           Merge Request 的 IID（merge 必需）
+  --project <name>         项目名覆盖（默认从 git remote origin 自动识别）
+  -h, --help               显示帮助
 
 配置:
-  项目映射: ~/.passionzale-skills/routine-bot.json
+  项目映射: ~/.passionzale-skills/passionzale.json
   环境变量: ~/.passionzale-skills/.env
     GITLAB_BASE_URL, GITLAB_ACCESS_TOKEN,
     JENKINS_BASE_URL, JENKINS_USERNAME, JENKINS_ACCESS_TOKEN`;
@@ -593,6 +599,8 @@ interface Options {
   env?: string;
   iid?: number;
   project?: string;
+  sourceBranch?: string;
+  targetBranch?: string;
 }
 
 function parseArgs(argv: string[]): { command: string | null; options: Options } {
@@ -604,6 +612,12 @@ function parseArgs(argv: string[]): { command: string | null; options: Options }
     switch (arg) {
       case "--env":
         options.env = argv[++i];
+        break;
+      case "--source-branch":
+        options.sourceBranch = argv[++i];
+        break;
+      case "--target-branch":
+        options.targetBranch = argv[++i];
         break;
       case "--iid":
         options.iid = Number(argv[++i]);
@@ -655,7 +669,12 @@ async function main(): Promise<void> {
 
     case "mr": {
       const config = loadConfig();
-      const data = await cmdCreateMr(config, { env: options.env, project: options.project });
+      const data = await cmdCreateMr(config, {
+        env: options.env,
+        sourceBranch: options.sourceBranch,
+        targetBranch: options.targetBranch,
+        project: options.project,
+      });
       console.log(JSON.stringify({ success: true, data }, null, 2));
       return;
     }

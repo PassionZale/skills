@@ -1,10 +1,10 @@
 ---
-name: routine-bot
+name: passionzale
 description: 当需要触发 Jenkins Job 构建、创建 GitLab Merge Request、合并 Merge Request，或执行部署流程时使用此技能。当用户说"构建"、"发 MR"、"创建合并请求"、"合并"、"部署"、"发版"、"上线"等时触发。
 disable-model-invocation: true
 ---
 
-# Routine Bot
+# Passionzale
 
 通过 CLI 脚本操作 GitLab Merge Request 和 Jenkins 构建。
 
@@ -40,12 +40,14 @@ ${BUN_X} {baseDir}/scripts/main.ts <command> [options]
 |------|---------|------|
 | `jobs` | 无 | 列出 Jenkins Jobs（只读） |
 | `build --env <env>` | `--env` | 触发 Jenkins Job 构建 |
-| `mr --env <env>` | `--env` | 创建 MR（当前分支 → 目标分支） |
+| `mr` | `--env` 或 `--target-branch`（至少其一） | 创建 MR（源分支默认当前分支，目标分支默认环境映射） |
 | `merge --iid <iid>` | `--iid` | 等待 MR 可合并（2s 轮询，2min 超时）后合并 |
 
 可选参数：
 
-- `--env <env>`：环境名，**单次调用只支持一个环境**；多环境需求请按顺序多次调用。可用取值由 `~/.passionzale-skills/routine-bot.json` 中该项目配置的键决定，配置是什么就是什么，未配置的环境会报错并列出可用值
+- `--env <env>`：环境名，**单次调用只支持一个环境**；多环境需求请按顺序多次调用。可用取值由 `~/.passionzale-skills/passionzale.json` 中该项目配置的键决定，配置是什么就是什么，未配置的环境会报错并列出可用值
+- `--source-branch <branch>`：MR 的源分支，默认取当前检出的分支
+- `--target-branch <branch>`：MR 的目标分支，**显式指定优先于 `--env` 的环境映射**；与 `--env` 至少提供其一
 - `--project <name>`：项目名覆盖。默认脚本会从 `git remote get-url origin` 自动识别仓库名，一般无需手动指定
 
 ## 项目与环境映射
@@ -53,7 +55,7 @@ ${BUN_X} {baseDir}/scripts/main.ts <command> [options]
 项目配置（GitLab projectId、env → 目标分支、env → Jenkins Job）位于:
 
 ```
-~/.passionzale-skills/routine-bot.json
+~/.passionzale-skills/passionzale.json
 ```
 
 模板见本技能目录下的 `config.example.json`。若脚本报错"配置文件不存在"或"配置中不存在项目"，请引导用户参照模板补全配置。
@@ -68,7 +70,7 @@ ${BUN_X} {baseDir}/scripts/main.ts <command> [options]
 
 用户要求"部署/发版到某环境"时，按以下顺序执行（每个环境一条完整管道，多环境依次重复）：
 
-1. **确定环境**：确认目标 env。用户未指定时，先读取 `~/.passionzale-skills/routine-bot.json` 中当前项目配置的环境键，让用户从中选择
+1. **确定环境**：确认目标 env。用户未指定时，先读取 `~/.passionzale-skills/passionzale.json` 中当前项目配置的环境键，让用户从中选择
 2. **检查工作区**：执行 `git status --porcelain`，若有未提交的代码，**中止流程**并引导用户先提交（如使用 git-commit 技能）或暂存
 3. **创建 MR**：`mr --env <env>`，从输出的 JSON 中记下 `data.iid`
 4. **合并 MR**：`merge --iid <上一步的 iid>`（脚本内部会等待 CI/检查通过后再合并）
