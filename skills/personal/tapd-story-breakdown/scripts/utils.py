@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import base64
 import zipfile
 from pathlib import Path
 from typing import Dict, Optional
@@ -128,12 +129,68 @@ def to_long_id(story_id: str, workspace_id: str, is_cloud: bool = True) -> str:
     return story_id
 
 
-def analyze_image_with_vision(url: str, context: str = "") -> str:
+def to_short_id(long_id: str) -> str:
     """
-    使用智谱 GLM 视觉模型解析图片内容
+    从长 ID 反推短 ID
+
+    长 ID 结构为「2 位前缀 + workspace_id + 9 位补零段」，取末尾 9 位去前导零即为短 ID。
+    长度不足 12 位的输入（不构成完整长 ID）原样去前导零返回。
 
     Args:
-        url: 图片 URL
+        long_id: 需求长 ID
+
+    Returns:
+        短 ID
+    """
+    long_id = str(long_id).strip()
+
+    if long_id.isdigit() and len(long_id) >= 12:
+        long_id = long_id[-9:]
+
+    return long_id.lstrip("0") or "0"
+
+
+def download_image(url: str) -> tuple[bytes, str] | None:
+    """
+    下载图片原始内容
+
+    Args:
+        url: 图片下载 URL
+
+    Returns:
+        (图片字节内容, Content-Type) 元组，失败时返回 None
+    """
+    try:
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        return resp.content, resp.headers.get("Content-Type", "")
+    except Exception as e:
+        print(f"Warning: 图片下载失败（{url}）: {type(e).__name__}: {e}")
+        return None
+
+
+def _unique_path(path: Path) -> Path:
+    """路径已存在时追加序号后缀（如 name-1.ext），避免同批附件互相覆盖"""
+    if not path.exists():
+        return path
+
+    for i in range(1, 1000):
+        candidate = path.with_name(f"{path.stem}-{i}{path.suffix}")
+        if not candidate.exists():
+            return candidate
+
+    return path
+
+
+def analyze_image_with_vision(image_data: bytes, mime_type: str = "image/png", context: str = "") -> str:
+    """
+    使用视觉模型解析图片内容
+
+    Kimi 等视觉模型不接受远程图片 URL，图片以 base64 data URI 形式传入。
+
+    Args:
+        image_data: 图片二进制内容
+        mime_type: 图片 MIME 类型，如 image/png；无法识别时回退 image/png
         context: 图片周围的文字上下文（可选）
 
     Returns:
@@ -167,6 +224,9 @@ def analyze_image_with_vision(url: str, context: str = "") -> str:
 
     user_text = f"这张图片来自产品需求文档。{context_text}\n\n请分析图片内容。"
 
+    mime = (mime_type or "").split(";")[0].strip().lower() or "image/png"
+    data_uri = f"data:{mime};base64,{base64.b64encode(image_data).decode('utf-8')}"
+
     # 配置重试策略
     session = requests.Session()
     retry = Retry(
@@ -196,32 +256,36 @@ def analyze_image_with_vision(url: str, context: str = "") -> str:
                         "role": "user",
                         "content": [
                             {"type": "text", "text": user_text},
-                            {"type": "image_url", "image_url": {"url": url}},
+                            {"type": "image_url", "image_url": {"url": data_uri}},
                         ],
                     },
                 ],
                 "thinking": {"type": "disabled"},
                 "stream": False,
             },
-            timeout=(5, 25),  # (connect_timeout, read_timeout)
+            timeout=(5, 120),  # (connect_timeout, read_timeout)，base64 大图适当放宽
         )
         response.raise_for_status()
         data = response.json()
         return data["choices"][0]["message"]["content"]
     except Exception as e:
-        print(f"Warning: 视觉模型分析失败（{url}）: {type(e).__name__}: {e}")
+        print(f"Warning: 视觉模型分析失败: {type(e).__name__}: {e}")
         return ""
     finally:
         session.close()
 
 
-def download_attachments(story_id: str, workspace_id: str) -> list[Path]:
+def download_attachments(story_id: str, workspace_id: str, attach_dir: Path) -> list[Path]:
     """
-    下载需求的 HTML 和 ZIP 附件到 {PWD}/stories/{story_id}/attachments/
+    下载需求的全部附件到指定目录（不做类型过滤）
+
+    zip 附件解压后删除原 zip，保留解压产物；其余类型原样保存。
+    同批附件重名时自动追加序号后缀。
 
     Args:
         story_id: 需求长 ID
         workspace_id: 工作区 ID
+        attach_dir: 附件保存目录（通常是 stories/<short_id>/intake/prototype/）
 
     Returns:
         解压后所有 HTML 文件的路径列表
@@ -237,22 +301,14 @@ def download_attachments(story_id: str, workspace_id: str) -> list[Path]:
         },
     )
 
-    attach_dir = Path.cwd() / "stories" / story_id / "attachments"
+    attachments = [item["Attachment"] for item in response.get("data", [])]
 
-    # 过滤 html 和 zip 附件
-    filtered = []
-    for item in response.get("data", []):
-        att = item["Attachment"]
-        ct = att.get("content_type", "")
-        if ct.startswith("text/html") or ct == "application/zip":
-            filtered.append(att)
-
-    if not filtered:
+    if not attachments:
         return []
 
     attach_dir.mkdir(parents=True, exist_ok=True)
 
-    for att in filtered:
+    for att in attachments:
         download_url = make_request(
             "GET",
             "/attachments/down",
@@ -262,7 +318,7 @@ def download_attachments(story_id: str, workspace_id: str) -> list[Path]:
             },
         )["data"]["Attachment"]["download_url"]
 
-        local_file = attach_dir / att["filename"]
+        local_file = _unique_path(attach_dir / (att.get("filename") or f"attachment-{att['id']}"))
         resp = requests.get(download_url, timeout=30)
         resp.raise_for_status()
         local_file.write_bytes(resp.content)
