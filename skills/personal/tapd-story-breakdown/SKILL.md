@@ -51,6 +51,22 @@ python3 ${BASE_DIR}/scripts/get_story.py --s <story_id>
 python3 ${BASE_DIR}/scripts/get_story.py --s <story_id> --w <workspace_id>
 ```
 
+脚本会在 `${PWD}/stories/<short_id>/` 下产出以下物料（重复拉取为覆盖式，`ui/`、`docs/` 不受影响）：
+
+```
+stories/<short_id>/
+├── manifest.json         # 需求元数据: id, short_id, title, slug, workspace_id, url, updated_at
+├── intake/
+│   ├── prd.md            # 工作副本: 清洗后的需求 + 图片本地引用 + 视觉/原型分析
+│   ├── prd.raw.html      # TAPD API 原始富文本快照
+│   ├── images/           # 富文本内嵌图片 (img-01.png, img-02.jpg, ...)
+│   ├── prototype/        # 全部 TAPD 附件原样保存
+│   └── ui/               # UI 稿目录, 由人工投放
+└── docs/                 # 技术文档目录, 由人工投放
+```
+
+拉取完成后，**立即**阅读 `prd.md` 的需求内容，提炼 2~5 个英文单词的语义化短语（小写、连字符连接，能一眼看出需求主题），将 `manifest.json` 的 `slug` 字段从占位值 `tapd-<short_id>` 更新为 `tapd-<short_id>-<语义短语>`。该字段用作后续 git feature 分支名，重复拉取时脚本会保留已改写的 slug。
+
 ### Step 2 — 确定目标 Domain
 
 1. 读取 `references/domain.md`，了解 domain key → 业务模块的映射关系

@@ -5,15 +5,19 @@
 
 功能：
 - 支持短 ID 或长 ID 查询
-- 并发调用视觉模型分析所有图片
-- 将图片替换为结构化文本说明
-- 输出纯文本格式供 LLM 理解
+- 在 {PWD}/stories/<short_id>/ 下落盘需求物料（manifest.json + intake/）
+- 下载富文本内嵌图片到本地，并发调用视觉模型生成文字说明
+- 下载全部附件到 intake/prototype/，HTML 原型交文本模型分析
+- 输出整理后的 Markdown 供 LLM 理解
 """
 
 import argparse
+import json
 import os
+import shutil
 import sys
 import concurrent.futures
+from datetime import date
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse, parse_qs
@@ -32,8 +36,10 @@ from utils import (
     load_env,
     make_request,
     to_long_id,
+    to_short_id,
     analyze_image_with_vision,
     download_attachments,
+    download_image,
     analyze_html_with_llm,
 )
 from typings import StoryListResponse, ImageResponse
@@ -42,6 +48,35 @@ from typings import StoryListResponse, ImageResponse
 # =============================================================================
 # 图片处理函数
 # =============================================================================
+
+
+_IMAGE_EXT_CONTENT_TYPES = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "image/bmp": ".bmp",
+    "image/svg+xml": ".svg",
+}
+
+
+def _image_ext(url: str, content_type: str = "") -> str:
+    """
+    根据下载 URL 后缀或响应 Content-Type 推断图片扩展名
+
+    Args:
+        url: 图片下载 URL
+        content_type: 下载响应的 Content-Type（可选）
+
+    Returns:
+        以 . 开头的扩展名，无法识别时默认 .png
+    """
+    suffix = Path(urlparse(url).path).suffix.lower()
+    if suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"}:
+        return ".jpg" if suffix == ".jpeg" else suffix
+
+    ct = content_type.split(";")[0].strip().lower()
+    return _IMAGE_EXT_CONTENT_TYPES.get(ct, ".png")
 
 
 def get_tapd_image(src: str, workspace_id: str) -> tuple[str, str]:
@@ -146,16 +181,20 @@ def get_surrounding_text(img_tag, char_limit: int = 200) -> str:
     return f"{before} [图片在此] {after}".strip()
 
 
-def enrich_description_with_vision(html: str, workspace_id: str) -> str:
+def enrich_description_with_vision(html: str, workspace_id: str, images_dir: Path) -> str:
     """
-    使用视觉模型分析图片并替换为结构化文本
+    下载富文本内嵌图片到本地，并调用视觉模型生成文字说明
+
+    图片按出现顺序编号保存为 images/img-NN.<ext>（同一图片只下载一次），
+    替换为本地相对引用，视觉分析结果以引用块形式紧跟其后。
 
     Args:
         html: 原始 description HTML
         workspace_id: TAPD 工作区 ID
+        images_dir: 图片保存目录
 
     Returns:
-        替换图片后的纯文本 description
+        整理后的 Markdown description（图片引用指向本地 images/）
     """
     if not html:
         return ""
@@ -165,39 +204,64 @@ def enrich_description_with_vision(html: str, workspace_id: str) -> str:
 
     soup = BeautifulSoup(html, "html.parser")
 
-    # 2. 提取所有 img src
-    img_info_list: list[tuple] = []  # [(img_tag, original_src, download_url), ...]
+    # 2. 提取所有 img src 并下载到本地
+    images_dir.mkdir(parents=True, exist_ok=True)
+
+    img_info_list: list[tuple] = []  # [(img_tag, download_url, local_ref, alt), ...]
+    downloaded: dict[str, str] = {}  # {download_url: 本地相对引用，空串表示已尝试但失败}
+    image_payloads: dict[str, tuple[bytes, str]] = {}  # {download_url: (图片字节, Content-Type)}
+    seq = 0
+
     for img in soup.find_all("img"):
         src = img.get("src", "")
         if not src or src.startswith("data:"):
             continue
         original_src, download_url = get_tapd_image(src, workspace_id)
-        img_info_list.append((img, original_src, download_url))
+
+        if download_url not in downloaded:
+            content = download_image(download_url)
+            if content is None:
+                downloaded[download_url] = ""
+            else:
+                seq += 1
+                data, content_type = content
+                filename = f"img-{seq:02d}{_image_ext(download_url, content_type)}"
+                (images_dir / filename).write_bytes(data)
+                downloaded[download_url] = f"images/{filename}"
+                image_payloads[download_url] = (data, content_type)
+
+        local_ref = downloaded[download_url]
+        alt = f"图片 {seq}" if local_ref else ""
+        img_info_list.append((img, download_url, local_ref, alt))
 
     if not img_info_list:
         # 无图片，直接转 Markdown
         print("[2/5] 未检测到图片，跳过视觉分析")
-        return md(str(soup))
+        return md(str(soup), escape_asterisks=False, escape_underscores=False)
 
-    print(f"[2/5] 检测到 {len(img_info_list)} 张图片，提取下载 URL 完成")
+    saved_count = sum(1 for _, _, ref, _ in img_info_list if ref)
+    print(f"[2/5] 检测到 {len(img_info_list)} 张图片，{saved_count} 张已下载到本地")
 
     # 3. 并发调用视觉模型分析每张图
     vision_results: dict[str, str] = {}  # {download_url: analysis_text}
 
+    unique_urls = list(dict.fromkeys(url for _, url, _, _ in img_info_list if url in image_payloads))
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        # 构建 {url: context} 映射
+        # 构建 {url: context} 映射（同 URL 多处出现时取第一处的上下文）
         url_to_context: dict[str, str] = {}
-        for img_tag, _, download_url in img_info_list:
-            url_to_context[download_url] = get_surrounding_text(img_tag)
+        for img_tag, download_url, _, _ in img_info_list:
+            url_to_context.setdefault(download_url, get_surrounding_text(img_tag))
 
-        print(f"[3/5] 并发调用视觉模型分析 {len(img_info_list)} 张图片...")
+        print(f"[3/5] 并发调用视觉模型分析 {len(unique_urls)} 张图片...")
 
-        # 提交任务时传入 context
+        # 提交任务时传入图片字节（base64 data URI 传参，Kimi 不接受远程 URL）
         future_to_url = {
             executor.submit(
-                analyze_image_with_vision, url, url_to_context.get(url, "")
+                analyze_image_with_vision,
+                *image_payloads[url],
+                url_to_context.get(url, ""),
             ): url
-            for _, _, url in img_info_list
+            for url in unique_urls
         }
         completed = 0
         for future in concurrent.futures.as_completed(future_to_url):
@@ -205,27 +269,59 @@ def enrich_description_with_vision(html: str, workspace_id: str) -> str:
             try:
                 result = future.result()
                 completed += 1
-                print(f"      进度: {completed}/{len(img_info_list)}")
+                print(f"      进度: {completed}/{len(unique_urls)}")
                 if result:
                     vision_results[url] = result
             except Exception:
                 pass
 
-    # 4. 将分析结果替换回 html
-    print("[4/5] 将分析结果替换回需求描述")
-    for img_tag, _, download_url in img_info_list:
-        analysis = vision_results.get(download_url, "")
+    # 4. 将图片替换为本地引用 + 分析说明引用块
+    #    表格内的图片会被 markdownify 平铺成纯文本丢失引用，统一提升到所属表格之后
+    print("[4/5] 将图片引用与说明替换回需求描述")
+    moved_anchors: dict[int, object] = {}  # {table 节点 id: 该表格后最后插入的节点}
 
-        if analysis:
-            placeholder = soup.new_tag("div")
-            placeholder.string = f"[图片内容说明]\n{analysis}\n[/图片内容说明]"
-            img_tag.replace_with(placeholder)
+    for img_tag, download_url, local_ref, alt in img_info_list:
+        note = soup.new_tag("blockquote")
+        p = soup.new_tag("p")
+
+        img_new = None
+        if local_ref:
+            analysis = vision_results.get(download_url, "")
+            p.string = f"[图片内容说明]\n{analysis or '（视觉分析失败，请人工查看图片）'}\n[/图片内容说明]"
+            note.append(p)
+            img_new = soup.new_tag("img")
+            img_new["src"] = local_ref
+            img_new["alt"] = alt
         else:
+            p.string = "[图片内容说明]（图片下载失败，原始地址见 prd.raw.html）[/图片内容说明]"
+            note.append(p)
+
+        table = img_tag.find_parent("table")
+        if table is None:
+            # 常规位置：原位替换
+            if img_new is not None:
+                img_tag.replace_with(img_new)
+                img_new.insert_after(note)
+            else:
+                img_tag.replace_with(note)
+        else:
+            # 表格内：提升到表格之后，按出现顺序排列
+            cursor = moved_anchors.get(id(table), table)
+            if img_new is not None:
+                wrapper = soup.new_tag("p")
+                wrapper.append(img_new)
+                cursor.insert_after(wrapper)
+                wrapper.insert_after(note)
+                cursor = note
+            else:
+                cursor.insert_after(note)
+                cursor = note
+            moved_anchors[id(table)] = cursor
             img_tag.decompose()
 
     # 5. html 转 Markdown
     print("[5/5] 需求描述解析完成")
-    return md(str(soup))
+    return md(str(soup), escape_asterisks=False, escape_underscores=False)
 
 
 # =============================================================================
@@ -233,19 +329,20 @@ def enrich_description_with_vision(html: str, workspace_id: str) -> str:
 # =============================================================================
 
 
-def parse_attachments(story_id: str, workspace_id: str) -> str:
+def parse_attachments(story_id: str, workspace_id: str, attach_dir: Path) -> str:
     """
     下载并分析需求附件，返回附件分析文本
 
     Args:
         story_id: 需求长 ID
         workspace_id: 工作区 ID
+        attach_dir: 附件保存目录（stories/<short_id>/intake/prototype/）
 
     Returns:
         附件分析文本，无附件时返回空字符串
     """
     print("[1/2] 下载原型附件...")
-    html_files = download_attachments(story_id, workspace_id)
+    html_files = download_attachments(story_id, workspace_id, attach_dir)
 
     if not html_files:
         print("[2/2] 未检测到 HTML 原型附件，跳过附件分析")
@@ -288,6 +385,46 @@ def parse_attachments(story_id: str, workspace_id: str) -> str:
 # =============================================================================
 
 
+def write_manifest(
+    story_dir: Path,
+    long_id: str,
+    short_id: str,
+    title: str,
+    workspace_id: str,
+) -> None:
+    """
+    写入 manifest.json（覆盖刷新字段，但保留 agent 已改写的 slug）
+
+    slug 初始占位为 tapd-<short_id>，由调用方 agent 在拉取后阅读需求内容改写为
+    tapd-<short_id>-<语义短语>，用作 git feature 分支名。重拉时若已有 slug 与
+    占位值不同，则原样保留。
+    """
+    manifest_file = story_dir / "manifest.json"
+
+    existing: dict = {}
+    if manifest_file.exists():
+        try:
+            existing = json.loads(manifest_file.read_text("utf-8"))
+        except (OSError, ValueError):
+            existing = {}
+
+    slug = f"tapd-{short_id}"
+    old_slug = str(existing.get("slug") or "")
+    if old_slug and old_slug != f"tapd-{existing.get('short_id', short_id)}":
+        slug = old_slug
+
+    manifest = {
+        "id": long_id,
+        "short_id": short_id,
+        "title": title,
+        "slug": slug,
+        "workspace_id": workspace_id,
+        "url": f"https://www.tapd.cn/{workspace_id}/prong/stories/view/{long_id}",
+        "updated_at": date.today().isoformat(),
+    }
+    manifest_file.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", "utf-8")
+
+
 def get_story(story_id: str, workspace_id: Optional[str] = None) -> None:
     """
     从 TAPD 获取需求（Story）详情并打印
@@ -307,6 +444,7 @@ def get_story(story_id: str, workspace_id: Optional[str] = None) -> None:
 
     # 转换短 ID 为长 ID
     long_story_id = to_long_id(story_id, workspace_id)
+    short_id = to_short_id(long_story_id)
 
     response: StoryListResponse = make_request(
         "GET",
@@ -327,14 +465,34 @@ def get_story(story_id: str, workspace_id: Optional[str] = None) -> None:
     # 提取 story
     story = response["data"][0]["Story"]
 
-    enriched_text = enrich_description_with_vision(story["description"], workspace_id)
+    # 准备目录结构：images/、prototype/ 覆盖式重建，ui/、docs/ 仅预创建、绝不触碰内容
+    story_dir = Path.cwd() / "stories" / short_id
+    intake_dir = story_dir / "intake"
+    images_dir = intake_dir / "images"
+    prototype_dir = intake_dir / "prototype"
 
-    attachment_section = parse_attachments(long_story_id, workspace_id)
+    for product_dir in (images_dir, prototype_dir):
+        if product_dir.exists():
+            shutil.rmtree(product_dir)
+        product_dir.mkdir(parents=True, exist_ok=True)
+
+    for manual_dir in (intake_dir / "ui", story_dir / "docs"):
+        manual_dir.mkdir(parents=True, exist_ok=True)
+        (manual_dir / ".gitkeep").touch()
+
+    write_manifest(story_dir, long_story_id, short_id, story["name"], workspace_id)
+
+    # 保存 API 原始富文本快照
+    (intake_dir / "prd.raw.html").write_text(story["description"] or "", "utf-8")
+
+    enriched_text = enrich_description_with_vision(story["description"], workspace_id, images_dir)
+
+    attachment_section = parse_attachments(long_story_id, workspace_id, prototype_dir)
 
     print("✓ 需求解析完成")
 
     # 构造 agent_prompt
-    agent_prompt = f"""以下是需求详情（其中图片已转换为文字描述）：
+    agent_prompt = f"""以下是需求详情（图片以本地相对路径引用到 images/，并附文字说明）：
 
 ## 需求名称
 
@@ -348,8 +506,7 @@ def get_story(story_id: str, workspace_id: Optional[str] = None) -> None:
 """
 
     # 写入 prd.md
-    prd_file = Path.cwd() / "stories" / long_story_id / "prd.md"
-    prd_file.parent.mkdir(parents=True, exist_ok=True)
+    prd_file = intake_dir / "prd.md"
     prd_file.write_text(agent_prompt, "utf-8")
 
     print(agent_prompt)
