@@ -65,7 +65,12 @@ stories/<short_id>/
 └── docs/                 # 技术文档目录, 由人工投放
 ```
 
-拉取完成后，**立即**阅读 `prd.md` 的需求内容，提炼 2~5 个英文单词的语义化短语（小写、连字符连接，能一眼看出需求主题），将 `manifest.json` 的 `slug` 字段从占位值 `tapd-<short_id>` 更新为 `tapd-<short_id>-<语义短语>`。该字段用作后续 git feature 分支名，重复拉取时脚本会保留已改写的 slug。
+拉取完成后，依次完成两项整理：
+
+1. **更新 slug**：阅读 `prd.md` 的需求内容，提炼 2~5 个英文单词的语义化短语（小写、连字符连接，能一眼看出需求主题），将 `manifest.json` 的 `slug` 字段从占位值 `tapd-<short_id>` 更新为 `tapd-<short_id>-<语义短语>`。该字段用作后续 git feature 分支名，重复拉取时脚本会保留已改写的 slug。
+
+2. **下载原型**：`prd.md` 中出现**原型域名白名单**（`yph.naswe.top`）内的链接时，筛选出 URL 执行
+   `python3 ${BASE_DIR}/scripts/download_prototypes.py --f ${PWD}/stories/<short_id>/intake/prd.md <url1> <url2> ...`。
 
 ### Step 2 — 确定目标 Domain
 
