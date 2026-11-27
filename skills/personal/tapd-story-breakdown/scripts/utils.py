@@ -44,17 +44,11 @@ def load_env_file(p: str) -> dict[str, str]:
 
 
 def load_env() -> None:
-    home = Path.home()
-    cwd = Path.cwd()
+    home_env = load_env_file(Path.home() / ".passionzale-skills" / ".env")
+    cwd_env = load_env_file(Path.cwd() / ".passionzale-skills" / ".env")
 
-    home_env = load_env_file(home / ".passionzale-skills" / ".env")
-    cwd_env = load_env_file(cwd / ".passionzale-skills" / ".env")
-
-    for k, v in home_env.items():
-        if k not in os.environ:
-            os.environ[k] = v
-
-    for k, v in cwd_env.items():
+    merged = {**home_env, **cwd_env}
+    for k, v in merged.items():
         if k not in os.environ:
             os.environ[k] = v
 

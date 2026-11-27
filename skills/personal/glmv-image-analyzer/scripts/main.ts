@@ -32,10 +32,8 @@ function loadEnv(): void {
   const cwd = process.cwd();
   const homeEnv = loadEnvFile(resolve(home, ".passionzale-skills", ".env"));
   const cwdEnv = loadEnvFile(resolve(cwd, ".passionzale-skills", ".env"));
-  for (const [k, v] of Object.entries(homeEnv)) {
-    if (!(k in process.env)) process.env[k] = v;
-  }
-  for (const [k, v] of Object.entries(cwdEnv)) {
+  const merged = { ...homeEnv, ...cwdEnv };
+  for (const [k, v] of Object.entries(merged)) {
     if (!(k in process.env)) process.env[k] = v;
   }
 }
