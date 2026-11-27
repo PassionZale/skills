@@ -20,6 +20,10 @@ from pathlib import Path
 from utils import load_env, to_long_id, make_request, print_json
 from typings import TaskInput, UserInfoResponse, StoryListResponse
 
+# 默认任务优先级：父需求未设置优先级时回退使用。
+# TAPD 官方映射（open.tapd.cn）：4=High(最高) / 3=Middle / 2=Low / 1=Nice To Have
+DEFAULT_TASK_PRIORITY = "4"
+
 
 def create_tasks(
     story_id: str, workspace_id: str | None, json_file: str, dry_run: bool = False
@@ -97,6 +101,20 @@ def create_tasks(
     # 提取 story 基础信息，用于继承属性（优先级、迭代等）
     story = story_info["data"][0]["Story"]
 
+    # 查询目标工作空间的「任务」工作项类型 ID（不同工作空间 ID 不同，不可硬编码）
+    workitem_types = make_request(
+        "GET", "/workitem_types", params={"workspace_id": workspace_id}
+    )
+    task_type_id = ""
+    for item in workitem_types.get("data", []):
+        wt = item.get("WorkitemType", item)
+        if wt.get("name") == "任务":
+            task_type_id = wt.get("id")
+            break
+    if not task_type_id:
+        print(f"Error: workspace {workspace_id} 下未找到「任务」工作项类型")
+        sys.exit(1)
+
     print(f"准备创建 {len(tasks)} 个任务，关联到 Story: {story['id']}")
     print("-" * 50)
 
@@ -105,8 +123,8 @@ def create_tasks(
     for idx, task in enumerate(tasks, 1):
         # 构造任务数据
         task_data = {
-            "workitem_type_id": "1140888836001000162",  # 任务类型
-            "priority": story["priority"],  # 继承父需求优先级
+            "workitem_type_id": task_type_id,  # 任务类型（按工作空间查询）
+            "priority": story["priority"] or DEFAULT_TASK_PRIORITY,  # 继承父需求优先级，未设置时默认最高(4=High)
             "priority_label": story["priority_label"],
             "iteration_id": story["iteration_id"],  # 继承父需求迭代
             "parent_id": story["id"],  # 关联父需求
@@ -120,7 +138,10 @@ def create_tasks(
             "custom_field_56": "前端WEB",  # 自定义字段
         }
 
-        print_json(task_data)
+        # 空字符串字段不提交（如需求未设置优先级、自定义字段时）
+        payload = {k: v for k, v in task_data.items() if v != ""}
+
+        print_json(payload)
 
         if dry_run:
             # 模拟模式：仅打印预览
@@ -131,11 +152,24 @@ def create_tasks(
         else:
             # 真实调用 TAPD API
             try:
-                response = make_request("POST", "/stories", data=task_data)
+                response = make_request("POST", "/stories", data=payload)
                 task_id = response.get("data", {}).get("Story", {}).get("id", "unknown")
                 print(f"[{idx}/{len(tasks)}] ✓ {task['name']} -> Task ID: {task_id}")
                 success_count += 1
             except Exception as e:
+                # 迭代规划无权限时降级重试：去掉 iteration_id（任务落「未迭代」，后续在页面拖入迭代）
+                resp = getattr(e, "response", None)
+                if resp is not None and resp.status_code == 403 and "iteration_id" in payload:
+                    try:
+                        retry_payload = {k: v for k, v in payload.items() if k != "iteration_id"}
+                        response = make_request("POST", "/stories", data=retry_payload)
+                        task_id = response.get("data", {}).get("Story", {}).get("id", "unknown")
+                        print(f"[{idx}/{len(tasks)}] ✓ {task['name']} -> Task ID: {task_id}（无迭代规划权限，已省略 iteration_id）")
+                        success_count += 1
+                        continue
+                    except Exception as e2:
+                        print(f"[{idx}/{len(tasks)}] ✗ {task['name']} -> Error: {e2}")
+                        continue
                 print(f"[{idx}/{len(tasks)}] ✗ {task['name']} -> Error: {e}")
 
     # ========== Step 6: 输出统计 ==========
